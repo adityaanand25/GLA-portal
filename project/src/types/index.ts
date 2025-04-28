@@ -5,11 +5,18 @@ export interface User {
   role: 'student' | 'faculty' | 'admin';
 }
 
+export interface AuthResponse {
+  id: string;
+  name: string;
+  email: string;
+  role: 'student' | 'faculty' | 'admin';
+}
+
 export interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, role: string) => Promise<any>;
-  register: (name: string, email: string, password: string, role: string) => Promise<any>;
+  login: (email: string, password: string, role: string) => Promise<AuthResponse>;
+  register: (name: string, email: string, password: string, role: string) => Promise<AuthResponse>;
   logout: () => void;
 }
 
@@ -20,6 +27,7 @@ export interface Course {
   description: string;
   credits: number;
   instructor: string;
+  department: string;
 }
 
 export interface Complaint {
@@ -38,6 +46,7 @@ export interface IdCardRequest {
   id: string;
   userId: string;
   studentName: string;
+  cardType: string;
   reason: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   createdAt: string;
@@ -60,9 +69,10 @@ export interface Student {
   id: string;
   name: string;
   email: string;
-  enrollmentNumber: string;
-  department: string;
-  semester: number;
+  enrollmentNumber?: string;
+  department?: string;
+  semester?: number;
+  enrollment_date?: string;
 }
 
 export interface Attendance {

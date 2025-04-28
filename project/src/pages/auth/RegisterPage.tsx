@@ -40,11 +40,11 @@ const RegisterPage = () => {
   const onSubmit = async (data: RegisterFormValues) => {
     setIsLoading(true);
     setRegisterError('');
-    
+
     try {
       await registerUser(data.name, data.email, data.password, data.role);
-      
-      // Redirect based on role
+
+      // Navigate based on role after successful registration
       switch (data.role) {
         case 'student':
           navigate('/student');
@@ -59,8 +59,11 @@ const RegisterPage = () => {
           navigate('/');
       }
     } catch (error) {
-      setRegisterError('Failed to register. Please try again.');
-      console.error(error);
+      if (error instanceof Error) {
+        setRegisterError(error.message);
+      } else {
+        setRegisterError('Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

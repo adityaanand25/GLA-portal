@@ -18,7 +18,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored user data on component mount
     const storedUser = localStorage.getItem('gla_user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
@@ -27,43 +26,50 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   const login = async (email: string, password: string, role: string) => {
-    // Simulate API call with local storage for demo
     try {
-      // In a real app, this would be an API call
-      // Mock successful login with hardcoded user data
-      const userData: User = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: email.split('@')[0],
-        email,
-        role, // 'student', 'faculty', or 'admin'
-      };
-      
+      const response = await fetch('http://localhost:3000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password, role }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Login failed');
+      }
+
+      const userData = await response.json();
       setUser(userData);
       localStorage.setItem('gla_user', JSON.stringify(userData));
       return userData;
     } catch (error) {
       console.error('Login failed:', error);
-      throw new Error('Invalid credentials');
+      throw error;
     }
   };
 
   const register = async (name: string, email: string, password: string, role: string) => {
-    // Simulate API call with local storage for demo
     try {
-      // In a real app, this would be an API call
-      const userData: User = {
-        id: Math.random().toString(36).substring(2, 9),
-        name,
-        email,
-        role,
-      };
-      
+      const response = await fetch('http://localhost:3000/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name, email, password, role }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Registration failed');
+      }
+
+      const userData = await response.json();
       setUser(userData);
       localStorage.setItem('gla_user', JSON.stringify(userData));
       return userData;
     } catch (error) {
       console.error('Registration failed:', error);
-      throw new Error('Registration failed');
+      throw error;
     }
   };
 

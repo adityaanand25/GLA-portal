@@ -19,6 +19,11 @@ const DashboardLayout = () => {
     setIsMobileMenuOpen(false);
   }, [location]);
 
+  useEffect(() => {
+    console.log('DashboardLayout loaded with user:', user);
+    console.log('Current location:', location.pathname);
+  }, [user, location]);
+
   if (!user) {
     return null;
   }

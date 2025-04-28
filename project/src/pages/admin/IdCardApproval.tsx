@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import io from 'socket.io-client'; // New import
-import { Search, BadgeCheck, X, Eye } from 'lucide-react';
+import { Socket, io } from 'socket.io-client';
+import { Search, BadgeCheck, Eye } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import { IdCardRequest } from '../../types';
+import { toast } from 'react-hot-toast';
 
-const socket = io('http://127.0.0.1:3000'); // New socket connection
+let socket: Socket | null = null;
 
 const IdCardApproval = () => {
   const [requests, setRequests] = useState<IdCardRequest[]>([]);
@@ -18,7 +19,7 @@ const IdCardApproval = () => {
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     search: '',
-    status: '',
+    status: 'Pending',
     dateSort: 'newest',
   });
 
@@ -26,34 +27,80 @@ const IdCardApproval = () => {
     const fetchData = async () => {
       try {
         const res = await fetch('http://127.0.0.1:3000/api/idcards');
+        if (!res.ok) {
+          throw new Error('Failed to fetch requests');
+        }
         const data = await res.json();
-        setRequests(data);
-        setFilteredRequests(data.filter((req: IdCardRequest) => req.status === 'Pending'));
-        setFilters({ ...filters, status: 'Pending' });
+        // Map the data to match our IdCardRequest type
+        const mappedRequests: IdCardRequest[] = data.map((item: any) => ({
+          id: item.id.toString(),
+          userId: item.student_id,
+          studentName: item.student_name,
+          cardType: item.card_type,
+          reason: item.reason,
+          status: item.status,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at
+        }));
+        setRequests(mappedRequests);
+        // Initially filter for pending requests
+        setFilteredRequests(mappedRequests.filter(req => req.status === 'Pending'));
       } catch (error) {
         console.error(error);
+        toast.error('Failed to load ID card requests');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     fetchData();
   }, []);
 
   useEffect(() => {
-    socket.on('idcard_update', (update: Partial<IdCardRequest> & { id: number | string }) => {
-      setRequests(prev =>
-        prev.map(req =>
-          req.id === update.id ? { ...req, ...update } : req
-        )
-      );
-      setRequests(prev => {
-        if (!prev.find(req => req.id === update.id)) {
-          return [update as IdCardRequest, ...prev];
-        }
-        return prev;
+    // Initialize socket connection
+    if (!socket) {
+      socket = io('http://localhost:3000', {
+        transports: ['websocket'],
+        autoConnect: true
       });
-    });
+
+      // Socket event listeners
+      socket.on('connect', () => {
+        console.log('Connected to WebSocket server');
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+      });
+
+      socket.on('new_idcard_request', (newRequest) => {
+        setRequests(prev => [{
+          id: newRequest.id,
+          studentName: newRequest.studentName,
+          reason: newRequest.reason,
+          status: newRequest.status,
+          cardType: newRequest.cardType,
+          createdAt: newRequest.createdAt,
+          updatedAt: newRequest.createdAt
+        }, ...prev]);
+        
+        toast.success('New ID card request received');
+      });
+
+      socket.on('idcard_update', (update: Partial<IdCardRequest> & { id: string }) => {
+        setRequests(prev =>
+          prev.map(req =>
+            req.id === update.id ? { ...req, ...update } : req
+          )
+        );
+      });
+    }
+
+    // Cleanup on component unmount
     return () => {
-      socket.off('idcard_update');
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
     };
   }, []);
 

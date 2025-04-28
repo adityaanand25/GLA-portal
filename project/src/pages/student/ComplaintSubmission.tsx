@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Check, AlertCircle, Send } from 'lucide-react';
 import Card from '../../components/ui/Card';
@@ -7,6 +7,8 @@ import Input from '../../components/ui/Input';
 import TextArea from '../../components/ui/TextArea';
 import Select from '../../components/ui/Select';
 import { Complaint } from '../../types';
+import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
 
 type FormData = {
   title: string;
@@ -15,19 +17,10 @@ type FormData = {
 };
 
 const ComplaintSubmission = () => {
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const [complaints, setComplaints] = useState<Complaint[]>([
-    {
-      id: '1',
-      userId: 'user1',
-      title: 'Wi-Fi connectivity issues in Library',
-      description: 'The Wi-Fi in the main library has been unstable for the past week.',
-      category: 'IT',
-      status: 'Pending',
-      createdAt: '2025-04-10T14:30:00Z',
-    },
-  ]);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
 
   const {
     register,
@@ -42,31 +35,86 @@ const ComplaintSubmission = () => {
     },
   });
 
-  const onSubmit = (data: FormData) => {
-    setIsSubmitting(true);
+  useEffect(() => {
+    const fetchComplaints = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:3000/api/complaints');
+        if (!res.ok) throw new Error('Failed to fetch complaints');
+        const data = await res.json();
+        // Filter complaints for current user
+        const userComplaints = data.filter((c: any) => c.student_id === user?.id);
+        setComplaints(userComplaints.map((c: any) => ({
+          id: c.id.toString(),
+          userId: c.student_id,
+          title: c.title,
+          description: c.description,
+          category: c.category,
+          status: c.status,
+          createdAt: c.created_at,
+          response: c.response,
+          resolvedAt: c.resolved_at
+        })));
+      } catch (error) {
+        console.error(error);
+        toast.error('Failed to load complaints');
+      }
+    };
+
+    if (user) {
+      fetchComplaints();
+    }
+  }, [user]);
+
+  const onSubmit = async (data: FormData) => {
+    if (!user) return;
     
-    // Simulate API call
-    setTimeout(() => {
-      const newComplaint: Complaint = {
-        id: Math.random().toString(36).substring(2, 9),
-        userId: 'user1',
-        title: data.title,
-        description: data.description,
-        category: data.category as 'IT' | 'Service' | 'Other',
-        status: 'Pending',
-        createdAt: new Date().toISOString(),
-      };
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('http://127.0.0.1:3000/api/complaints', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          student_id: user.id,
+          title: data.title,
+          description: data.description,
+          category: data.category,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to submit complaint');
+      }
+
+      const newComplaint = await res.json();
       
-      setComplaints([newComplaint, ...complaints]);
+      setComplaints(prev => [{
+        id: newComplaint.id.toString(),
+        userId: newComplaint.student_id,
+        title: newComplaint.title,
+        description: newComplaint.description,
+        category: newComplaint.category,
+        status: newComplaint.status,
+        createdAt: newComplaint.created_at,
+        response: newComplaint.response,
+        resolvedAt: newComplaint.resolved_at
+      }, ...prev]);
+
       setSuccessMessage('Your complaint has been submitted successfully.');
       reset();
-      setIsSubmitting(false);
+      toast.success('Complaint submitted successfully');
       
       // Clear success message after 5 seconds
       setTimeout(() => {
         setSuccessMessage('');
       }, 5000);
-    }, 1000);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to submit complaint');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

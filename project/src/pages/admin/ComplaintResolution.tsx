@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, MessageSquare, Check, X, Reply } from 'lucide-react';
+import { Socket, io } from 'socket.io-client';
+import { Search, MessageSquare, Check, Reply } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -7,58 +8,9 @@ import Select from '../../components/ui/Select';
 import TextArea from '../../components/ui/TextArea';
 import { Complaint } from '../../types';
 import { useForm } from 'react-hook-form';
+import { toast } from 'react-hot-toast';
 
-const mockComplaints: Complaint[] = [
-  {
-    id: '1',
-    userId: 'user1',
-    title: 'Wi-Fi connectivity issues in Library',
-    description: 'The Wi-Fi in the main library has been unstable for the past week. It keeps disconnecting every few minutes making it difficult to complete research work.',
-    category: 'IT',
-    status: 'Pending',
-    createdAt: '2025-04-15T14:30:00Z',
-  },
-  {
-    id: '2',
-    userId: 'user2',
-    title: 'Cafeteria food quality concern',
-    description: 'The quality of food in the main cafeteria has noticeably deteriorated over the past month. Items are often cold and portion sizes have decreased.',
-    category: 'Service',
-    status: 'In Progress',
-    createdAt: '2025-04-14T10:45:00Z',
-    response: 'We are investigating this with our catering service provider. Thank you for bringing this to our attention.',
-  },
-  {
-    id: '3',
-    userId: 'user3',
-    title: 'Classroom projector malfunction',
-    description: 'The projector in Room 305 is not working properly. The colors are distorted and sometimes it shuts off in the middle of presentations.',
-    category: 'IT',
-    status: 'Resolved',
-    createdAt: '2025-04-10T09:15:00Z',
-    resolvedAt: '2025-04-12T11:30:00Z',
-    response: 'The projector has been replaced with a new unit. Please let us know if you experience any further issues.',
-  },
-  {
-    id: '4',
-    userId: 'user4',
-    title: 'Library noise level',
-    description: 'The quiet study area in the library is consistently noisy due to a group of students who gather there to discuss group projects.',
-    category: 'Other',
-    status: 'Pending',
-    createdAt: '2025-04-13T16:20:00Z',
-  },
-  {
-    id: '5',
-    userId: 'user5',
-    title: 'Course registration system error',
-    description: 'I keep getting an error message when trying to register for MATH301. The system shows the course is available but won\'t allow me to add it.',
-    category: 'IT',
-    status: 'In Progress',
-    createdAt: '2025-04-09T11:45:00Z',
-    response: 'Our IT team is looking into this issue. We\'ll update you within 24 hours.',
-  },
-];
+let socket: Socket | null = null;
 
 type FormData = {
   response: string;
@@ -88,33 +40,96 @@ const ComplaintResolution = () => {
   } = useForm<FormData>();
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setComplaints(mockComplaints);
-      setFilteredComplaints(mockComplaints);
-      setIsLoading(false);
-    }, 1000);
+    const fetchComplaints = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:3000/api/complaints');
+        if (!res.ok) throw new Error('Failed to fetch complaints');
+        
+        const data = await res.json();
+        const mappedComplaints = data.map((c: any) => ({
+          id: c.id.toString(),
+          userId: c.student_id,
+          studentName: c.student_name,
+          title: c.title,
+          description: c.description,
+          category: c.category,
+          status: c.status,
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
+          resolvedAt: c.resolved_at,
+          response: c.response
+        }));
+        
+        setComplaints(mappedComplaints);
+        setFilteredComplaints(mappedComplaints);
+      } catch (error) {
+        console.error(error);
+        toast.error('Failed to load complaints');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchComplaints();
+
+    // Initialize socket connection
+    if (!socket) {
+      socket = io('http://localhost:3000', {
+        transports: ['websocket'],
+        autoConnect: true
+      });
+
+      socket.on('connect', () => {
+        console.log('Connected to WebSocket server');
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+      });
+
+      socket.on('new_complaint', (newComplaint) => {
+        setComplaints(prev => [{
+          id: newComplaint.id.toString(),
+          userId: newComplaint.studentId,
+          studentName: newComplaint.studentName,
+          title: newComplaint.title,
+          description: newComplaint.description,
+          category: newComplaint.category,
+          status: newComplaint.status,
+          createdAt: newComplaint.createdAt,
+          response: null,
+          resolvedAt: null
+        }, ...prev]);
+        
+        toast.success('New complaint received');
+      });
+    }
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
     let filtered = [...complaints];
 
-    // Apply search filter
     if (filters.search) {
       const searchTerm = filters.search.toLowerCase();
       filtered = filtered.filter(
         complaint => 
           complaint.title.toLowerCase().includes(searchTerm) ||
-          complaint.description.toLowerCase().includes(searchTerm)
+          complaint.description.toLowerCase().includes(searchTerm) ||
+          complaint.studentName.toLowerCase().includes(searchTerm)
       );
     }
 
-    // Apply category filter
     if (filters.category) {
       filtered = filtered.filter(complaint => complaint.category === filters.category);
     }
 
-    // Apply status filter
     if (filters.status) {
       filtered = filtered.filter(complaint => complaint.status === filters.status);
     }
@@ -139,32 +154,55 @@ const ComplaintResolution = () => {
     });
   };
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = async (data: FormData) => {
     if (!selectedComplaint) return;
     
     setIsProcessing(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      const now = new Date().toISOString();
-      const updatedComplaint: Complaint = {
-        ...selectedComplaint,
-        status: data.status as 'Pending' | 'In Progress' | 'Resolved',
-        response: data.response,
-        ...(data.status === 'Resolved' ? { resolvedAt: now } : {}),
-      };
+    try {
+      const res = await fetch(`http://127.0.0.1:3000/api/complaints/${selectedComplaint.id}/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          response: data.response,
+          status: data.status,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update complaint');
+      }
+
+      const { updated_at } = await res.json();
       
-      setComplaints(complaints.map(c => c.id === selectedComplaint.id ? updatedComplaint : c));
+      setComplaints(prev => prev.map(c => 
+        c.id === selectedComplaint.id 
+          ? {
+              ...c,
+              status: data.status as 'Pending' | 'In Progress' | 'Resolved',
+              response: data.response,
+              updatedAt: updated_at,
+              ...(data.status === 'Resolved' ? { resolvedAt: updated_at } : {})
+            }
+          : c
+      ));
+
       setIsProcessing(false);
       setIsReplyModalOpen(false);
       
+      toast.success('Response submitted successfully');
       setSuccessMessage(`Complaint "${selectedComplaint.title}" has been updated successfully.`);
       
-      // Clear success message after 5 seconds
       setTimeout(() => {
         setSuccessMessage('');
       }, 5000);
-    }, 1000);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to submit response');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const getCategoryBadgeClass = (category: string) => {

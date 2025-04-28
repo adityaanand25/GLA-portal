@@ -1,25 +1,13 @@
-import { Loader2 } from 'lucide-react';
-
-interface LoadingSpinnerProps {
-  fullScreen?: boolean;
-  size?: number;
-  color?: string;
-}
-
-const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ 
-  fullScreen = false, 
-  size = 24, 
-  color = 'text-blue-600' 
-}) => {
-  if (fullScreen) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-80 z-50">
-        <Loader2 className={`animate-spin ${color}`} size={size} />
+const LoadingSpinner = () => {
+  return (
+    <div className="flex items-center justify-center min-h-screen p-5 bg-gray-100">
+      <div className="flex space-x-2 animate-pulse">
+        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
       </div>
-    );
-  }
-
-  return <Loader2 className={`animate-spin ${color}`} size={size} />;
+    </div>
+  );
 };
 
 export default LoadingSpinner;

@@ -15,6 +15,10 @@ const FacultyDashboard = () => {
   });
 
   useEffect(() => {
+    console.log('FacultyDashboard loaded with user:', user);
+  }, [user]);
+
+  useEffect(() => {
     // In a real app, fetch this data from API
     // Simulating API call
     setTimeout(() => {

@@ -6,63 +6,22 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import { Course } from '../../types';
-
-const mockCourses: Course[] = [
-  {
-    id: '1',
-    code: 'CS101',
-    name: 'Introduction to Computer Science',
-    description: 'An introductory course covering the basic principles of computer science.',
-    credits: 3,
-    instructor: 'Dr. John Smith',
-  },
-  {
-    id: '2',
-    code: 'CS201',
-    name: 'Data Structures and Algorithms',
-    description: 'Study of fundamental data structures and algorithms used in computer science.',
-    credits: 4,
-    instructor: 'Dr. Jane Doe',
-  },
-  {
-    id: '3',
-    code: 'CS301',
-    name: 'Database Systems',
-    description: 'Design and implementation of database systems, including relational database theory and SQL.',
-    credits: 3,
-    instructor: 'Prof. Michael Brown',
-  },
-  {
-    id: '4',
-    code: 'CS401',
-    name: 'Software Engineering',
-    description: 'Principles and practices of software engineering, including project management and software design.',
-    credits: 4,
-    instructor: 'Dr. Sarah Wilson',
-  },
-  {
-    id: '5',
-    code: 'CS501',
-    name: 'Artificial Intelligence',
-    description: 'Introduction to artificial intelligence concepts, algorithms, and applications.',
-    credits: 3,
-    instructor: 'Prof. Robert Davis',
-  },
-];
-
-type FormData = {
-  search: string;
-  department: string;
-  credits: string;
-};
+import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
 
 const CourseEnrollment = () => {
-  const [courses, setCourses] = useState<Course[]>(mockCourses);
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState<string | null>(null);
-  const [filteredCourses, setFilteredCourses] = useState<Course[]>(mockCourses);
+  const [filteredCourses, setFilteredCourses] = useState<Course[]>([]);
 
-  const { register, handleSubmit, watch } = useForm<FormData>({
+  const { register, handleSubmit, watch } = useForm<{
+    search: string;
+    department: string;
+    credits: string;
+  }>({
     defaultValues: {
       search: '',
       department: '',
@@ -73,11 +32,32 @@ const CourseEnrollment = () => {
   const watchAllFields = watch();
 
   useEffect(() => {
-    // Simulate loading enrolled courses
-    setTimeout(() => {
-      setEnrolledCourses(['1', '3']);
-    }, 500);
-  }, []);
+    const fetchData = async () => {
+      try {
+        // Fetch all courses
+        const coursesRes = await fetch('http://127.0.0.1:3000/api/courses');
+        if (!coursesRes.ok) throw new Error('Failed to fetch courses');
+        const coursesData = await coursesRes.json();
+        setCourses(coursesData);
+        setFilteredCourses(coursesData);
+
+        // Fetch enrolled courses for the current student
+        if (user?.id) {
+          const enrolledRes = await fetch(`http://127.0.0.1:3000/api/courses/enrolled/${user.id}`);
+          if (!enrolledRes.ok) throw new Error('Failed to fetch enrolled courses');
+          const enrolledData = await enrolledRes.json();
+          setEnrolledCourses(enrolledData.map((course: any) => course.id.toString()));
+        }
+      } catch (error) {
+        console.error('Error loading courses:', error);
+        toast.error('Failed to load courses');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
 
   useEffect(() => {
     // Filter courses based on search input and filters
@@ -101,18 +81,43 @@ const CourseEnrollment = () => {
     setFilteredCourses(filtered);
   }, [watchAllFields, courses]);
 
-  const handleEnroll = (courseId: string) => {
+  const handleEnroll = async (courseId: string) => {
+    if (!user?.id) {
+      toast.error('Please log in to enroll in courses');
+      return;
+    }
+
     setIsEnrolling(courseId);
     
-    // Simulate API call
-    setTimeout(() => {
-      if (enrolledCourses.includes(courseId)) {
-        setEnrolledCourses(enrolledCourses.filter(id => id !== courseId));
-      } else {
+    try {
+      const res = await fetch('http://127.0.0.1:3000/api/courses/enroll', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          student_id: user.id,
+          course_id: courseId,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to process enrollment');
+      
+      const data = await res.json();
+      
+      if (data.enrolled) {
         setEnrolledCourses([...enrolledCourses, courseId]);
+        toast.success('Successfully enrolled in course');
+      } else {
+        setEnrolledCourses(enrolledCourses.filter(id => id !== courseId));
+        toast.success('Successfully unenrolled from course');
       }
+    } catch (error) {
+      console.error('Error processing enrollment:', error);
+      toast.error('Failed to process enrollment');
+    } finally {
       setIsEnrolling(null);
-    }, 1000);
+    }
   };
 
   return (

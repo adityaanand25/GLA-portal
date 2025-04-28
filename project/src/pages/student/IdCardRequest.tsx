@@ -7,6 +7,7 @@ import Input from '../../components/ui/Input';
 import TextArea from '../../components/ui/TextArea';
 import Select from '../../components/ui/Select';
 import { useAuth } from '../../hooks/useAuth';
+import { useIdCardStore } from '../../store/idCardStore';
 
 type FormData = {
   reason: string;
@@ -15,8 +16,10 @@ type FormData = {
 
 const IdCardRequest = () => {
   const { user } = useAuth();
+  const { addRequest } = useIdCardStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [hasActiveRequest, setHasActiveRequest] = useState(false);
 
   const {
@@ -33,34 +36,60 @@ const IdCardRequest = () => {
 
   const onSubmit = async (data: FormData) => {
     setIsSubmitting(true);
+    setErrorMessage('');
+    
     try {
-      const token = window.localStorage.getItem('gla_token') || '';
       const res = await fetch('http://127.0.0.1:3000/api/idcards', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`   // Include token
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          user_id: user?.id,
+          student_id: user?.id,
           student_name: user?.name,
+          card_type: data.cardType,
           reason: data.reason,
         }),
       });
+
+      const responseData = await res.json();
+
       if (res.ok) {
-        setSuccessMessage('Your ID card request has been submitted successfully. You will be notified when it is processed.');
+        // Add the request to Zustand store
+        addRequest({
+          id: responseData.id,
+          userId: user?.id || '',
+          studentName: user?.name || '',
+          cardType: data.cardType,
+          reason: data.reason,
+          status: 'Pending',
+          createdAt: responseData.created_at || new Date().toISOString(),
+          updatedAt: responseData.updated_at || new Date().toISOString(),
+        });
+        
+        setSuccessMessage('Your ID card request has been submitted successfully. The admin will review your request shortly.');
         setHasActiveRequest(true);
+        reset();
       } else {
-        console.error('Submission error');
+        setErrorMessage(responseData.error || 'Failed to submit request. Please try again.');
       }
     } catch (error) {
-      console.error(error);
+      console.error('Error submitting request:', error);
+      setErrorMessage('Network error. Please check your connection and try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-    reset();
-    setIsSubmitting(false);
-    setTimeout(() => {
+  };
+
+  const handleCancelRequest = async () => {
+    try {
+      // Add API call to cancel request if needed
+      setHasActiveRequest(false);
       setSuccessMessage('');
-    }, 5000);
+    } catch (error) {
+      console.error('Error canceling request:', error);
+      setErrorMessage('Failed to cancel request. Please try again.');
+    }
   };
 
   return (
@@ -73,6 +102,13 @@ const IdCardRequest = () => {
         <div className="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 flex items-start">
           <Check className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
           <span>{successMessage}</span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 flex items-start">
+          <AlertCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
@@ -92,7 +128,7 @@ const IdCardRequest = () => {
                 <div className="mt-6">
                   <Button
                     variant="outline"
-                    onClick={() => setHasActiveRequest(false)}
+                    onClick={handleCancelRequest}
                   >
                     Cancel Request
                   </Button>

@@ -4,13 +4,14 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Select from '../../components/ui/Select';
 import { useAuth } from '../../hooks/useAuth';
+import { useIdCardStore } from '../../store/idCardStore';
 
 type Request = {
   id: string;
   type: 'complaint' | 'idcard' | 'course';
   title: string;
   description: string;
-  status: 'Pending' | 'In Progress' | 'Resolved' | 'Rejected';
+  status: 'Pending' | 'Approved' | 'Rejected' | 'In Progress' | 'Resolved';
   createdAt: string;
   updatedAt: string;
   response?: string;
@@ -18,68 +19,39 @@ type Request = {
 
 const RequestStatus = () => {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<Request[]>([]);
+  const { requests } = useIdCardStore();
+  const [allRequests, setAllRequests] = useState<Request[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    // Simulate API call
     const loadRequests = async () => {
-      setIsLoading(true);
-      
-      // Mock data
-      setTimeout(() => {
-        const mockRequests: Request[] = [
-          {
-            id: '1',
-            type: 'complaint',
-            title: 'Wi-Fi connectivity issues in Library',
-            description: 'The Wi-Fi in the main library has been unstable for the past week.',
-            status: 'In Progress',
-            createdAt: '2025-04-10T14:30:00Z',
-            updatedAt: '2025-04-12T09:15:00Z',
-            response: 'Our IT team is investigating the issue. We have identified a potential hardware problem with one of the routers.',
-          },
-          {
-            id: '2',
-            type: 'idcard',
-            title: 'ID Card Replacement',
-            description: 'Lost my student ID card and need a replacement.',
-            status: 'Pending',
-            createdAt: '2025-04-14T10:45:00Z',
-            updatedAt: '2025-04-14T10:45:00Z',
-          },
-          {
-            id: '3',
-            type: 'course',
-            title: 'Course Enrollment - Data Structures',
-            description: 'Enrollment in CS201: Data Structures and Algorithms',
-            status: 'Resolved',
-            createdAt: '2025-04-05T08:20:00Z',
-            updatedAt: '2025-04-06T11:30:00Z',
-            response: 'Your enrollment has been confirmed. The course will appear in your schedule within 24 hours.',
-          },
-          {
-            id: '4',
-            type: 'complaint',
-            title: 'Cafeteria Food Quality',
-            description: 'The quality of food in the main cafeteria has deteriorated over the past month.',
-            status: 'Rejected',
-            createdAt: '2025-04-02T16:10:00Z',
-            updatedAt: '2025-04-04T13:25:00Z',
-            response: 'After investigation, we found that the food quality meets all university standards. However, we have shared your feedback with the catering service.',
-          },
-        ];
-        
-        setRequests(mockRequests);
+      try {
+        // Convert ID card requests to the common Request format
+        const idCardRequests = requests
+          .filter(req => req.userId === user?.id)
+          .map(req => ({
+            id: req.id,
+            type: 'idcard' as const,
+            title: 'ID Card Request',
+            description: req.reason,
+            status: req.status,
+            createdAt: req.createdAt,
+            updatedAt: req.updatedAt
+          }));
+
+        setAllRequests(idCardRequests);
+      } catch (error) {
+        console.error('Error loading requests:', error);
+      } finally {
         setIsLoading(false);
-      }, 1000);
+      }
     };
 
     loadRequests();
-  }, []);
+  }, [user?.id, requests]);
 
-  const filteredRequests = requests.filter(request => {
+  const filteredRequests = allRequests.filter(request => {
     if (filter === 'all') return true;
     if (filter === 'pending') return request.status === 'Pending' || request.status === 'In Progress';
     if (filter === 'resolved') return request.status === 'Resolved';

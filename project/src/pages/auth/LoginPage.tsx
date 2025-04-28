@@ -33,27 +33,30 @@ const LoginPage = () => {
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     setLoginError('');
-    
+
     try {
-      await login(data.email, data.password, data.role);
+      const userData = await login(data.email, data.password, data.role);
       
-      // Redirect based on role
-      switch (data.role) {
+      // Navigate based on role
+      switch (userData.role) {
         case 'student':
-          navigate('/student');
+          navigate('/student', { replace: true });
           break;
         case 'faculty':
-          navigate('/faculty');
+          navigate('/faculty', { replace: true });
           break;
         case 'admin':
-          navigate('/admin');
+          navigate('/admin', { replace: true });
           break;
         default:
-          navigate('/');
+          navigate('/', { replace: true });
       }
     } catch (error) {
-      setLoginError('Failed to login. Please check your credentials.');
-      console.error(error);
+      if (error instanceof Error) {
+        setLoginError(error.message);
+      } else {
+        setLoginError('Failed to login. Please check your credentials.');
+      }
     } finally {
       setIsLoading(false);
     }

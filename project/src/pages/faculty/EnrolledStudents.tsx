@@ -5,79 +5,18 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import { Student } from '../../types';
-
-const mockStudents: Student[] = [
-  {
-    id: '1',
-    name: 'Alex Johnson',
-    email: 'alex.johnson@example.com',
-    enrollmentNumber: 'EN2025001',
-    department: 'Computer Science',
-    semester: 3,
-  },
-  {
-    id: '2',
-    name: 'Samantha Williams',
-    email: 'samantha.williams@example.com',
-    enrollmentNumber: 'EN2025002',
-    department: 'Computer Science',
-    semester: 3,
-  },
-  {
-    id: '3',
-    name: 'Michael Brown',
-    email: 'michael.brown@example.com',
-    enrollmentNumber: 'EN2025003',
-    department: 'Computer Science',
-    semester: 5,
-  },
-  {
-    id: '4',
-    name: 'Jessica Davis',
-    email: 'jessica.davis@example.com',
-    enrollmentNumber: 'EN2025004',
-    department: 'Mathematics',
-    semester: 3,
-  },
-  {
-    id: '5',
-    name: 'David Miller',
-    email: 'david.miller@example.com',
-    enrollmentNumber: 'EN2025005',
-    department: 'Computer Science',
-    semester: 1,
-  },
-  {
-    id: '6',
-    name: 'Sarah Wilson',
-    email: 'sarah.wilson@example.com',
-    enrollmentNumber: 'EN2025006',
-    department: 'Physics',
-    semester: 3,
-  },
-  {
-    id: '7',
-    name: 'James Taylor',
-    email: 'james.taylor@example.com',
-    enrollmentNumber: 'EN2025007',
-    department: 'Computer Science',
-    semester: 3,
-  },
-];
-
-type FormData = {
-  search: string;
-  course: string;
-  department: string;
-  semester: string;
-};
+import { useAuth } from '../../hooks/useAuth';
+import { toast } from 'react-hot-toast';
 
 const EnrolledStudents = () => {
+  const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState('');
+  const [courses, setCourses] = useState<any[]>([]);
 
   const [filters, setFilters] = useState({
     search: '',
@@ -87,26 +26,49 @@ const EnrolledStudents = () => {
   });
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setStudents(mockStudents);
-      setFilteredStudents(mockStudents);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
+    const fetchData = async () => {
+      try {
+        // First fetch courses taught by the faculty member
+        const coursesRes = await fetch('http://127.0.0.1:3000/api/courses');
+        if (!coursesRes.ok) throw new Error('Failed to fetch courses');
+        const coursesData = await coursesRes.json();
+        
+        // Filter courses where instructor matches the faculty name
+        const facultyCourses = coursesData.filter((course: any) => 
+          course.instructor === user?.name
+        );
+        setCourses(facultyCourses);
+
+        // If a course is selected, fetch its students
+        if (selectedCourse) {
+          const studentsRes = await fetch(`http://127.0.0.1:3000/api/courses/${selectedCourse}/students`);
+          if (!studentsRes.ok) throw new Error('Failed to fetch students');
+          const studentsData = await studentsRes.json();
+          setStudents(studentsData);
+          setFilteredStudents(studentsData);
+        } else if (facultyCourses.length > 0) {
+          // Default to first course if none selected
+          setSelectedCourse(facultyCourses[0].id);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        toast.error('Failed to load data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.name, selectedCourse]);
 
   useEffect(() => {
     const filtered = students.filter((student) => {
       const searchMatch =
         !filters.search ||
         student.name.toLowerCase().includes(filters.search.toLowerCase()) ||
-        student.email.toLowerCase().includes(filters.search.toLowerCase()) ||
-        student.enrollmentNumber.toLowerCase().includes(filters.search.toLowerCase());
+        student.email.toLowerCase().includes(filters.search.toLowerCase());
 
-      const departmentMatch = !filters.department || student.department === filters.department;
-      const semesterMatch = !filters.semester || student.semester.toString() === filters.semester;
-
-      return searchMatch && departmentMatch && semesterMatch;
+      return searchMatch;
     });
 
     setFilteredStudents(filtered);
@@ -114,6 +76,9 @@ const EnrolledStudents = () => {
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === 'course') {
+      setSelectedCourse(value);
+    }
     setFilters({
       ...filters,
       [name]: value,
@@ -126,8 +91,29 @@ const EnrolledStudents = () => {
   };
 
   const handleExportList = () => {
-    // In a real app, this would generate a CSV or PDF file
-    alert('Exporting student list...');
+    // Convert the filtered students to CSV
+    const headers = ['Name', 'Email', 'Enrollment Date'];
+    const csvData = [
+      headers.join(','),
+      ...filteredStudents.map(student => 
+        [
+          student.name,
+          student.email,
+          new Date(student.enrollment_date).toLocaleDateString()
+        ].join(',')
+      )
+    ].join('\n');
+
+    // Create and trigger download
+    const blob = new Blob([csvData], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `enrolled-students-${selectedCourse}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   return (
@@ -153,7 +139,7 @@ const EnrolledStudents = () => {
             <Input
               type="text"
               name="search"
-              placeholder="Search by name, email, or enrollment number"
+              placeholder="Search by name or email"
               className="pl-10"
               value={filters.search}
               onChange={handleFilterChange}
@@ -164,42 +150,11 @@ const EnrolledStudents = () => {
             <Select
               label="Course"
               name="course"
-              value={filters.course}
+              value={selectedCourse}
               onChange={handleFilterChange}
               options={[
-                { value: '', label: 'All Courses' },
-                { value: 'CS101', label: 'CS101: Introduction to Computer Science' },
-                { value: 'CS201', label: 'CS201: Data Structures and Algorithms' },
-                { value: 'CS301', label: 'CS301: Database Systems' },
-              ]}
-            />
-            <Select
-              label="Department"
-              name="department"
-              value={filters.department}
-              onChange={handleFilterChange}
-              options={[
-                { value: '', label: 'All Departments' },
-                { value: 'Computer Science', label: 'Computer Science' },
-                { value: 'Mathematics', label: 'Mathematics' },
-                { value: 'Physics', label: 'Physics' },
-              ]}
-            />
-            <Select
-              label="Semester"
-              name="semester"
-              value={filters.semester}
-              onChange={handleFilterChange}
-              options={[
-                { value: '', label: 'All Semesters' },
-                { value: '1', label: 'Semester 1' },
-                { value: '2', label: 'Semester 2' },
-                { value: '3', label: 'Semester 3' },
-                { value: '4', label: 'Semester 4' },
-                { value: '5', label: 'Semester 5' },
-                { value: '6', label: 'Semester 6' },
-                { value: '7', label: 'Semester 7' },
-                { value: '8', label: 'Semester 8' },
+                { value: '', label: 'Select Course' },
+                ...courses.map(course => ({ value: course.id, label: course.name }))
               ]}
             />
           </div>
@@ -228,13 +183,7 @@ const EnrolledStudents = () => {
                     Name
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Enrollment No.
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Department
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Semester
+                    Email
                   </th>
                   <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
@@ -256,13 +205,7 @@ const EnrolledStudents = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {student.enrollmentNumber}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {student.department}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {student.semester}
+                      {student.email}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <Button
@@ -314,23 +257,9 @@ const EnrolledStudents = () => {
                             <dd className="mt-1 text-sm text-gray-900">{selectedStudent.email}</dd>
                           </div>
                           <div className="sm:col-span-1">
-                            <dt className="text-sm font-medium text-gray-500">Enrollment Number</dt>
-                            <dd className="mt-1 text-sm text-gray-900">{selectedStudent.enrollmentNumber}</dd>
-                          </div>
-                          <div className="sm:col-span-1">
-                            <dt className="text-sm font-medium text-gray-500">Department</dt>
-                            <dd className="mt-1 text-sm text-gray-900">{selectedStudent.department}</dd>
-                          </div>
-                          <div className="sm:col-span-1">
-                            <dt className="text-sm font-medium text-gray-500">Semester</dt>
-                            <dd className="mt-1 text-sm text-gray-900">{selectedStudent.semester}</dd>
-                          </div>
-                          <div className="sm:col-span-1">
-                            <dt className="text-sm font-medium text-gray-500">Status</dt>
+                            <dt className="text-sm font-medium text-gray-500">Enrollment Date</dt>
                             <dd className="mt-1 text-sm text-gray-900">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Active
-                              </span>
+                              {new Date(selectedStudent.enrollment_date).toLocaleDateString()}
                             </dd>
                           </div>
                         </dl>
