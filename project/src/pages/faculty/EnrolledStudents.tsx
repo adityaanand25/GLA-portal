@@ -17,41 +17,57 @@ const EnrolledStudents = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState('');
   const [courses, setCourses] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const [filters, setFilters] = useState({
     search: '',
-    course: '',
-    department: '',
-    semester: '',
+    rollNumber: '',
   });
 
+  // Fetch courses when component mounts
   useEffect(() => {
     const fetchData = async () => {
+      if (!user?.name) return;
+
       try {
-        // First fetch courses taught by the faculty member
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch all courses
         const coursesRes = await fetch('http://127.0.0.1:3000/api/courses');
-        if (!coursesRes.ok) throw new Error('Failed to fetch courses');
+        if (!coursesRes.ok) {
+          throw new Error('Failed to fetch courses');
+        }
         const coursesData = await coursesRes.json();
         
         // Filter courses where instructor matches the faculty name
         const facultyCourses = coursesData.filter((course: any) => 
-          course.instructor === user?.name
+          course.instructor && course.instructor.toLowerCase() === user.name.toLowerCase()
         );
-        setCourses(facultyCourses);
 
-        // If a course is selected, fetch its students
-        if (selectedCourse) {
-          const studentsRes = await fetch(`http://127.0.0.1:3000/api/courses/${selectedCourse}/students`);
-          if (!studentsRes.ok) throw new Error('Failed to fetch students');
-          const studentsData = await studentsRes.json();
-          setStudents(studentsData);
-          setFilteredStudents(studentsData);
-        } else if (facultyCourses.length > 0) {
-          // Default to first course if none selected
-          setSelectedCourse(facultyCourses[0].id);
+        if (facultyCourses.length === 0) {
+          setError('No courses assigned to you');
+          setIsLoading(false);
+          return;
         }
+
+        setCourses(facultyCourses);
+        
+        // Select the first course by default
+        const firstCourse = facultyCourses[0];
+        setSelectedCourse(firstCourse.id.toString());
+        
+        // Fetch students for the first course
+        const studentsRes = await fetch(`http://127.0.0.1:3000/api/courses/${firstCourse.id}/students`);
+        if (!studentsRes.ok) {
+          throw new Error('Failed to fetch students');
+        }
+        const data = await studentsRes.json();
+        setStudents(data.students || []);
+        setFilteredStudents(data.students || []);
       } catch (error) {
         console.error('Error loading data:', error);
+        setError('Failed to load courses and students');
         toast.error('Failed to load data');
       } finally {
         setIsLoading(false);
@@ -59,30 +75,72 @@ const EnrolledStudents = () => {
     };
 
     fetchData();
-  }, [user?.name, selectedCourse]);
+  }, [user?.name]);
 
+  // Fetch students when roll number or course changes
   useEffect(() => {
+    const fetchStudents = async () => {
+      if (!selectedCourse) return;
+      
+      try {
+        setIsLoading(true);
+        setError(null);
+        let url = `http://127.0.0.1:3000/api/courses/${selectedCourse}/students`;
+        
+        // Add roll number to query if provided
+        if (filters.rollNumber) {
+          url += `?roll_number=${filters.rollNumber}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Failed to fetch students');
+        }
+        const data = await response.json();
+        setStudents(data.students || []);
+        setFilteredStudents(data.students || []);
+      } catch (error) {
+        console.error('Error fetching students:', error);
+        setError('Failed to fetch students');
+        toast.error('Failed to fetch students');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    // Only fetch if there's a selected course
+    if (selectedCourse) {
+      fetchStudents();
+    }
+  }, [selectedCourse, filters.rollNumber]);
+
+  // Filter students based on search input (for name/email)
+  useEffect(() => {
+    if (!filters.search) {
+      setFilteredStudents(students);
+      return;
+    }
+
     const filtered = students.filter((student) => {
       const searchMatch =
-        !filters.search ||
         student.name.toLowerCase().includes(filters.search.toLowerCase()) ||
         student.email.toLowerCase().includes(filters.search.toLowerCase());
-
       return searchMatch;
     });
 
     setFilteredStudents(filtered);
-  }, [filters, students]);
+  }, [filters.search, students]);
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (name === 'course') {
       setSelectedCourse(value);
+    } else {
+      setFilters(prev => ({
+        ...prev,
+        [name]: value,
+      }));
     }
-    setFilters({
-      ...filters,
-      [name]: value,
-    });
   };
 
   const handleViewStudent = (student: Student) => {
@@ -92,14 +150,15 @@ const EnrolledStudents = () => {
 
   const handleExportList = () => {
     // Convert the filtered students to CSV
-    const headers = ['Name', 'Email', 'Enrollment Date'];
+    const headers = ['Name', 'Email', 'Roll Number', 'Enrollment Date'];
     const csvData = [
       headers.join(','),
       ...filteredStudents.map(student => 
         [
           student.name,
           student.email,
-          new Date(student.enrollment_date).toLocaleDateString()
+          student.roll_number || 'N/A',
+          new Date(student.enrollment_date || '').toLocaleDateString()
         ].join(',')
       )
     ].join('\n');
@@ -129,9 +188,41 @@ const EnrolledStudents = () => {
         </Button>
       </div>
 
-      {/* Search and Filters */}
+      {/* Course Selection */}
       <Card>
         <div className="space-y-4">
+          <Select
+            label="Select Course"
+            name="course"
+            value={selectedCourse}
+            onChange={handleFilterChange}
+            options={[
+              ...courses.map(course => ({
+                value: course.id.toString(),
+                label: `${course.code}: ${course.name}`
+              }))
+            ]}
+          />
+        </div>
+      </Card>
+
+      {/* Search Filters */}
+      <Card>
+        <div className="space-y-4">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <Input
+              type="text"
+              name="rollNumber"
+              placeholder="Search by Roll Number"
+              className="pl-10"
+              value={filters.rollNumber}
+              onChange={handleFilterChange}
+            />
+          </div>
+
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-gray-400" />
@@ -145,19 +236,6 @@ const EnrolledStudents = () => {
               onChange={handleFilterChange}
             />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Select
-              label="Course"
-              name="course"
-              value={selectedCourse}
-              onChange={handleFilterChange}
-              options={[
-                { value: '', label: 'Select Course' },
-                ...courses.map(course => ({ value: course.id, label: course.name }))
-              ]}
-            />
-          </div>
         </div>
       </Card>
 
@@ -167,6 +245,16 @@ const EnrolledStudents = () => {
           <div className="py-16 text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent"></div>
             <p className="mt-4 text-gray-600">Loading students...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <h3 className="text-lg font-medium text-gray-900">{error}</h3>
+            <p className="mt-1 text-sm text-gray-500">Please try again later</p>
+          </div>
+        ) : !selectedCourse ? (
+          <div className="text-center py-8">
+            <h3 className="text-lg font-medium text-gray-900">Please select a course</h3>
+            <p className="mt-1 text-sm text-gray-500">Choose a course to view enrolled students</p>
           </div>
         ) : filteredStudents.length === 0 ? (
           <div className="text-center py-8">
@@ -179,6 +267,9 @@ const EnrolledStudents = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Roll Number
+                  </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Name
                   </th>
@@ -193,6 +284,9 @@ const EnrolledStudents = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredStudents.map((student) => (
                   <tr key={student.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                      {student.roll_number || 'N/A'}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-full bg-indigo-100 text-indigo-700 font-medium">
@@ -200,7 +294,6 @@ const EnrolledStudents = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                          <div className="text-sm text-gray-500">{student.email}</div>
                         </div>
                       </div>
                     </td>
@@ -249,6 +342,10 @@ const EnrolledStudents = () => {
                       <div className="border-t border-gray-200 pt-4">
                         <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
                           <div className="sm:col-span-1">
+                            <dt className="text-sm font-medium text-gray-500">Roll Number</dt>
+                            <dd className="mt-1 text-sm text-gray-900">{selectedStudent.roll_number || 'N/A'}</dd>
+                          </div>
+                          <div className="sm:col-span-1">
                             <dt className="text-sm font-medium text-gray-500">Full name</dt>
                             <dd className="mt-1 text-sm text-gray-900">{selectedStudent.name}</dd>
                           </div>
@@ -259,7 +356,7 @@ const EnrolledStudents = () => {
                           <div className="sm:col-span-1">
                             <dt className="text-sm font-medium text-gray-500">Enrollment Date</dt>
                             <dd className="mt-1 text-sm text-gray-900">
-                              {new Date(selectedStudent.enrollment_date).toLocaleDateString()}
+                              {new Date(selectedStudent.enrollment_date || '').toLocaleDateString()}
                             </dd>
                           </div>
                         </dl>

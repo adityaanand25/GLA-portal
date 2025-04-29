@@ -3,6 +3,7 @@ export interface User {
   name: string;
   email: string;
   role: 'student' | 'faculty' | 'admin';
+  roll_number?: string;
 }
 
 export interface AuthResponse {
@@ -10,6 +11,7 @@ export interface AuthResponse {
   name: string;
   email: string;
   role: 'student' | 'faculty' | 'admin';
+  roll_number?: string;
 }
 
 export interface AuthContextType {
@@ -69,6 +71,7 @@ export interface Student {
   id: string;
   name: string;
   email: string;
+  roll_number?: string;
   enrollmentNumber?: string;
   department?: string;
   semester?: number;

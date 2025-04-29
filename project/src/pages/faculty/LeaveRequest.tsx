@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Calendar, Clock, Check, AlertCircle } from 'lucide-react';
 import Card from '../../components/ui/Card';
@@ -8,6 +8,9 @@ import TextArea from '../../components/ui/TextArea';
 import Select from '../../components/ui/Select';
 import { useAuth } from '../../hooks/useAuth';
 import { format, differenceInDays, addDays } from 'date-fns';
+import { io } from 'socket.io-client';
+
+const API_URL = 'http://127.0.0.1:3000';
 
 type FormData = {
   startDate: string;
@@ -16,11 +19,27 @@ type FormData = {
   reason: string;
 };
 
+type LeaveRequest = {
+  id: number;
+  faculty_id: number;
+  faculty_name: string;
+  start_date: string;
+  end_date: string;
+  leave_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  reason?: string;
+  admin_response?: string;
+};
+
 const LeaveRequest = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [leaveDuration, setLeaveDuration] = useState(0);
+  const [leaveHistory, setLeaveHistory] = useState<LeaveRequest[]>([]);
 
   const {
     register,
@@ -41,56 +60,95 @@ const LeaveRequest = () => {
   const endDate = watch('endDate');
 
   // Calculate leave duration when dates change
-  useState(() => {
+  useEffect(() => {
     if (startDate && endDate) {
       const days = differenceInDays(new Date(endDate), new Date(startDate)) + 1;
       setLeaveDuration(days > 0 ? days : 0);
     }
-  });
+  }, [startDate, endDate]);
 
-  const onSubmit = (data: FormData) => {
-    setIsSubmitting(true);
+  // Setup Socket.IO connection
+  useEffect(() => {
+    const socket = io(API_URL);
     
-    // Simulate API call
-    setTimeout(() => {
+    socket.on('leave_request_update', (data) => {
+      if (data.faculty_id === user?.id) {
+        // Update the leave request in the history
+        setLeaveHistory(prev => prev.map(leave => 
+          leave.id === data.id 
+            ? { ...leave, status: data.status, admin_response: data.admin_response }
+            : leave
+        ));
+
+        // Show notification
+        setSuccessMessage(`Your leave request has been ${data.status.toLowerCase()}`);
+        setTimeout(() => setSuccessMessage(''), 5000);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.id]);
+
+  // Fetch leave history
+  useEffect(() => {
+    const fetchLeaveHistory = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/faculty/leave-requests/${user?.id}`);
+        if (!response.ok) throw new Error('Failed to fetch leave history');
+        const data = await response.json();
+        setLeaveHistory(data);
+      } catch (error) {
+        console.error('Error fetching leave history:', error);
+      }
+    };
+
+    if (user?.id) {
+      fetchLeaveHistory();
+    }
+  }, [user?.id]);
+
+  const onSubmit = async (data: FormData) => {
+    try {
+      setIsSubmitting(true);
+      setErrorMessage('');
+      
+      const response = await fetch(`${API_URL}/api/faculty/leave-requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          faculty_id: Number(user?.id), // Convert to number
+          faculty_name: user?.name,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          leave_type: data.leaveType,
+          reason: data.reason,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to submit leave request');
+      }
+
+      const newLeave = await response.json();
+      setLeaveHistory(prev => [newLeave, ...prev]);
       setSuccessMessage('Your leave request has been submitted successfully.');
       reset();
-      setIsSubmitting(false);
-      
+
       // Clear success message after 5 seconds
       setTimeout(() => {
         setSuccessMessage('');
       }, 5000);
-    }, 1000);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit leave request');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  const leaveHistory = [
-    {
-      id: '1',
-      startDate: '2025-03-10',
-      endDate: '2025-03-12',
-      type: 'Sick Leave',
-      status: 'Approved',
-      appliedOn: '2025-03-08',
-    },
-    {
-      id: '2',
-      startDate: '2025-02-05',
-      endDate: '2025-02-10',
-      type: 'Vacation',
-      status: 'Approved',
-      appliedOn: '2025-01-25',
-    },
-    {
-      id: '3',
-      startDate: '2025-01-15',
-      endDate: '2025-01-15',
-      type: 'Personal Leave',
-      status: 'Rejected',
-      appliedOn: '2025-01-14',
-      reason: 'Insufficient notice period',
-    },
-  ];
 
   return (
     <div className="space-y-6">
@@ -102,6 +160,13 @@ const LeaveRequest = () => {
         <div className="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 flex items-start">
           <Check className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
           <span>{successMessage}</span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 flex items-start">
+          <AlertCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5" />
+          <span>{errorMessage}</span>
         </div>
       )}
 
@@ -245,7 +310,7 @@ const LeaveRequest = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {leaveHistory.map((leave) => {
-                  const days = differenceInDays(new Date(leave.endDate), new Date(leave.startDate)) + 1;
+                  const days = differenceInDays(new Date(leave.end_date), new Date(leave.start_date)) + 1;
                   
                   return (
                     <tr key={leave.id}>
@@ -253,19 +318,19 @@ const LeaveRequest = () => {
                         <div className="flex items-center">
                           <Calendar className="h-4 w-4 text-gray-400 mr-1" />
                           <span>
-                            {format(new Date(leave.startDate), 'MMM d, yyyy')}
-                            {leave.startDate !== leave.endDate && ` to ${format(new Date(leave.endDate), 'MMM d, yyyy')}`}
+                            {format(new Date(leave.start_date), 'MMM d, yyyy')}
+                            {leave.start_date !== leave.end_date && ` to ${format(new Date(leave.end_date), 'MMM d, yyyy')}`}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {leave.type}
+                        {leave.leave_type}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {days} day{days !== 1 && 's'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {format(new Date(leave.appliedOn), 'MMM d, yyyy')}
+                        {format(new Date(leave.created_at), 'MMM d, yyyy')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span 
@@ -278,6 +343,9 @@ const LeaveRequest = () => {
                         </span>
                         {leave.reason && (
                           <div className="mt-1 text-xs text-red-600">{leave.reason}</div>
+                        )}
+                        {leave.admin_response && (
+                          <div className="mt-1 text-xs text-gray-600">{leave.admin_response}</div>
                         )}
                       </td>
                     </tr>

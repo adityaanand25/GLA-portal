@@ -6,8 +6,16 @@ import logging
 import os
 from datetime import datetime
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Get the current directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE_PATH = os.path.join(BASE_DIR, 'database.db')
 
 def dict_factory(cursor, row):
     d = {}
@@ -16,133 +24,142 @@ def dict_factory(cursor, row):
     return d
 
 def get_db_connection():
-    db_path = os.path.join(BASE_DIR, 'database.db')
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = dict_factory
-    return conn
-
-# Create or connect to the database
-conn = get_db_connection()
-cursor = conn.cursor()
-
-# Create the users table if it doesn't exist
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL
-)
-''')
-
-# Drop the id_card_requests table if it exists
-cursor.execute('''
-DROP TABLE IF EXISTS id_card_requests
-''')
-
-# Create the id_card_requests table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS id_card_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id TEXT NOT NULL,
-    student_name TEXT NOT NULL,
-    card_type TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    status TEXT DEFAULT 'Pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (student_id) REFERENCES users (id)
-)
-''')
-
-# Create the courses table if it doesn't exist
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS courses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    credits INTEGER NOT NULL,
-    instructor TEXT,
-    department TEXT NOT NULL
-)
-''')
-
-# Create the course_enrollments table if it doesn't exist
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS course_enrollments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER NOT NULL,
-    course_id INTEGER NOT NULL,
-    enrollment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status TEXT DEFAULT 'active',
-    FOREIGN KEY (student_id) REFERENCES users (id),
-    FOREIGN KEY (course_id) REFERENCES courses (id),
-    UNIQUE(student_id, course_id)
-)
-''')
-
-# Create the complaints table if it doesn't exist
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS complaints (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    status TEXT DEFAULT 'Pending',
-    response TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TIMESTAMP,
-    FOREIGN KEY (student_id) REFERENCES users (id)
-)
-''')
-
-# Add some sample courses data if the table is empty
-cursor.execute('SELECT COUNT(*) FROM courses')
-if cursor.fetchone()['COUNT(*)'] == 0:
-    cursor.executemany('''
-        INSERT INTO courses (code, name, description, credits, instructor, department)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', [
-        ('CS101', 'Introduction to Computer Science', 'An introductory course covering the basic principles of computer science.', 3, 'Dr. John Smith', 'Computer Science'),
-        ('CS201', 'Data Structures and Algorithms', 'Study of fundamental data structures and algorithms used in computer science.', 4, 'Dr. Jane Doe', 'Computer Science'),
-        ('CS301', 'Database Systems', 'Design and implementation of database systems, including relational database theory and SQL.', 3, 'Prof. Michael Brown', 'Computer Science'),
-        ('CS401', 'Software Engineering', 'Principles and practices of software engineering, including project management and software design.', 4, 'Dr. Sarah Wilson', 'Computer Science'),
-        ('CS501', 'Artificial Intelligence', 'Introduction to artificial intelligence concepts, algorithms, and applications.', 3, 'Prof. Robert Davis', 'Computer Science')
-    ])
-
-# Add some sample data for testing
-cursor.execute('''
-INSERT INTO id_card_requests (student_id, student_name, card_type, reason, status, created_at)
-VALUES 
-    ('1', 'John Doe', 'standard', 'Lost previous card', 'Pending', datetime('now')),
-    ('2', 'Jane Smith', 'proximity', 'Damaged card', 'Pending', datetime('now', '-1 day')),
-    ('3', 'Alice Johnson', 'standard', 'First time request', 'Approved', datetime('now', '-2 days'))
-''')
-
-# Commit changes and close the connection
-conn.commit()
-conn.close()
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = dict_factory
+        # Test the connection
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.fetchone()
+        return conn
+    except sqlite3.Error as e:
+        logger.error(f"Database connection error: {str(e)}")
+        logger.error(f"Database path: {DATABASE_PATH}")
+        raise
 
 app = Flask(__name__)
-# Configure CORS to allow credentials and specific headers
-CORS(app, resources={
+
+# Configure CORS to allow requests from the frontend
+CORS(app, supports_credentials=True, resources={
     r"/*": {
-        "origins": ["http://localhost:5174"],
+        "origins": "*",  # For development only
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
+        "allow_headers": ["Content-Type", "Authorization", "Accept"]
     }
 })
 
-# Initialize Socket.IO
-socketio = SocketIO(app, cors_allowed_origins="http://localhost:5174")
+# Initialize Socket.IO with CORS configuration
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+def init_db():
+    logger.info("Initializing database...")
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+
+        # Create leave_requests table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS leave_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                faculty_id INTEGER NOT NULL,
+                faculty_name TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                leave_type TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL,
+                admin_response TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Create users table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL
+            )
+        ''')
+
+        # Create courses table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS courses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT,
+                credits INTEGER NOT NULL,
+                department TEXT NOT NULL,
+                assigned_faculty_id INTEGER,
+                instructor TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (assigned_faculty_id) REFERENCES users (id)
+            )
+        ''')
+
+        # Create course_enrollments table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS course_enrollments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                course_id INTEGER NOT NULL,
+                enrollment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active',
+                FOREIGN KEY (student_id) REFERENCES users (id),
+                FOREIGN KEY (course_id) REFERENCES courses (id),
+                UNIQUE(student_id, course_id)
+            )
+        ''')
+
+        conn.commit()
+        logger.info("Database initialized successfully")
+    except sqlite3.Error as e:
+        logger.error(f"Database initialization error: {str(e)}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+def init_sample_data():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if we have any courses
+        cursor.execute('SELECT COUNT(*) as count FROM courses')
+        count = cursor.fetchone()['count']
+
+        if count == 0:
+            # Insert sample courses
+            sample_courses = [
+                ('CS101', 'Introduction to Computer Science', 'Basic programming concepts and algorithms', 3, 'Computer Science'),
+                ('CS201', 'Data Structures and Algorithms', 'Advanced data structures and algorithm analysis', 4, 'Computer Science'),
+                ('MATH201', 'Linear Algebra', 'Vectors, matrices and linear transformations', 3, 'Mathematics'),
+                ('PHY101', 'Physics I', 'Classical mechanics and thermodynamics', 4, 'Physics'),
+                ('CS301', 'Database Systems', 'Database design and SQL', 3, 'Computer Science')
+            ]
+            
+            cursor.executemany('''
+                INSERT INTO courses (code, name, description, credits, department)
+                VALUES (?, ?, ?, ?, ?)
+            ''', sample_courses)
+            
+            conn.commit()
+            logger.info("Sample courses added successfully")
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error initializing sample data: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
+
+# Initialize database when app starts
+init_db()
+init_sample_data()
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -169,65 +186,114 @@ def register():
                 conn.close()
                 return jsonify({'error': 'Email already registered'}), 409
 
-            cursor.execute('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-                        (name, email, password, role))
+            # For admin registration, check email domain and existing admins
+            if role == 'admin':
+                if not email.endswith('@gla.ac.in'):
+                    return jsonify({'error': 'Admin email must be from @gla.ac.in domain'}), 403
+                
+                # Check if admin exists
+                cursor.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
+                admin_count = cursor.fetchone()['count']
+                
+                # Optional: Uncomment below to restrict to only one admin
+                # if admin_count > 0:
+                #     return jsonify({'error': 'An admin account already exists'}), 403
+
+            # Insert the new user
+            cursor.execute(
+                'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+                (name, email, password, role)
+            )
             conn.commit()
-            user_id = cursor.lastrowid
             
             # Fetch the created user
-            cursor.execute('SELECT id, name, email, role FROM users WHERE id = ?', (user_id,))
+            cursor.execute('SELECT id, name, email, role FROM users WHERE id = ?', (cursor.lastrowid,))
             user = cursor.fetchone()
             
+            logging.debug(f"Successfully registered new {role} user: {email}")
             return jsonify(user), 201
-            
-        except sqlite3.IntegrityError as e:
+
+        except sqlite3.Error as e:
             conn.rollback()
-            logging.error(f"Database integrity error: {str(e)}")
-            return jsonify({'error': 'Could not create user'}), 400
+            logging.error(f"Database error during registration: {str(e)}")
+            return jsonify({'error': 'Database error occurred'}), 500
         finally:
             conn.close()
 
     except Exception as e:
         logging.error(f"Error in /api/register: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'error': str(e) if str(e) else 'Internal server error'}), 500
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
         data = request.get_json()
+        logger.debug(f"Received login request with data: {data}")
+        
         if not data:
+            logger.error("No JSON data received in login request")
             return jsonify({'error': 'Invalid JSON data'}), 400
             
         email = data.get('email')
         password = data.get('password')
         role = data.get('role')
 
-        if not (email and password and role):
-            return jsonify({'error': 'Missing fields'}), 400
+        if not all([email, password, role]):
+            logger.error(f"Missing required fields in login request. Received: {data}")
+            return jsonify({'error': 'Email, password, and role are required'}), 400
+
+        logger.debug(f"Processing login attempt for email: {email}, role: {role}")
 
         conn = get_db_connection()
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT * FROM users WHERE email = ? AND password = ? AND role = ?', (email, password, role))
+            # First check if user exists with given email
+            cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
             user = cursor.fetchone()
-
+            
             if not user:
-                logging.debug(f"Login failed for email: {email}, role: {role}")
-                return jsonify({'error': 'Invalid credentials or role mismatch'}), 401
+                logger.debug(f"No user found with email: {email}")
+                return jsonify({'error': 'Invalid credentials'}), 401
+                
+            # Then check if password matches
+            cursor.execute('SELECT * FROM users WHERE email = ? AND password = ?', (email, password))
+            user = cursor.fetchone()
+            
+            if not user:
+                logger.debug(f"Invalid password for user: {email}")
+                return jsonify({'error': 'Invalid credentials'}), 401
+                
+            # Finally check if role matches
+            if user['role'] != role:
+                logger.debug(f"Role mismatch. User role: {user['role']}, Requested role: {role}")
+                return jsonify({'error': 'Invalid role for this user'}), 401
 
-            return jsonify({
+            logger.info(f"Login successful for user: {email}")
+            
+            response_data = {
                 'id': user['id'],
                 'name': user['name'],
                 'email': user['email'],
-                'role': user['role']
-            }), 200
+                'role': user['role'],
+                'roll_number': user.get('roll_number')
+            }
+            
+            logger.debug(f"Sending response: {response_data}")
+            return jsonify(response_data)
+
+        except Exception as e:
+            logger.error(f"Database error during login: {str(e)}")
+            return jsonify({'error': 'Database error occurred'}), 500
         finally:
             conn.close()
             
     except Exception as e:
-        logging.error(f"Error in /api/login: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logger.error(f"Unexpected error in login route: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/idcards', methods=['GET'])
 def get_id_cards():
@@ -361,12 +427,82 @@ def get_courses():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM courses')
+        
+        # Get all courses with complete information
+        cursor.execute('''
+            SELECT 
+                id,
+                code,
+                name,
+                description,
+                credits,
+                instructor,
+                department
+            FROM courses
+            ORDER BY code ASC
+        ''')
         courses = cursor.fetchall()
         conn.close()
+        
         return jsonify(courses)
     except Exception as e:
         logging.error(f"Error fetching courses: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/courses', methods=['POST'])
+def create_course():
+    try:
+        data = request.get_json()
+        logger.debug(f"Received course creation request with data: {data}")
+        
+        if not data:
+            logger.error("No JSON data received")
+            return jsonify({'error': 'Invalid JSON data'}), 400
+
+        required_fields = ['code', 'name', 'description', 'credits', 'department']
+        if not all(field in data for field in required_fields):
+            missing = [f for f in required_fields if f not in data]
+            logger.error(f"Missing required fields: {missing}")
+            return jsonify({'error': f'Missing fields: {", ".join(missing)}'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if course code already exists
+        cursor.execute('SELECT id FROM courses WHERE code = ?', (data['code'],))
+        if cursor.fetchone():
+            logger.error(f"Course code {data['code']} already exists")
+            conn.close()
+            return jsonify({'error': 'Course code already exists'}), 409
+
+        logger.debug("Creating new course...")
+        # Create new course
+        cursor.execute('''
+            INSERT INTO courses (code, name, description, credits, department)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (data['code'], data['name'], data['description'], data['credits'], data['department']))
+        
+        course_id = cursor.lastrowid
+        logger.debug(f"Created course with ID: {course_id}")
+        conn.commit()
+
+        # Fetch the created course
+        cursor.execute('SELECT * FROM courses WHERE id = ?', (course_id,))
+        new_course = cursor.fetchone()
+        conn.close()
+
+        if new_course:
+            logger.info(f"Successfully created course: {new_course}")
+            return jsonify(new_course), 201
+        else:
+            logger.error("Failed to fetch created course")
+            return jsonify({'error': 'Failed to create course'}), 500
+
+    except sqlite3.Error as e:
+        logger.error(f"Database error creating course: {str(e)}")
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error creating course: {str(e)}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/courses/enroll', methods=['POST'])
@@ -438,18 +574,57 @@ def get_course_students(course_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT u.id, u.name, u.email, ce.enrollment_date
+        
+        # Verify if course exists
+        cursor.execute('SELECT * FROM courses WHERE id = ?', (course_id,))
+        course = cursor.fetchone()
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+
+        # Get search parameter from query string
+        roll_number = request.args.get('roll_number', '')
+        
+        # Build the base query with proper joins
+        query = '''
+            SELECT DISTINCT
+                u.id,
+                u.name,
+                u.email,
+                u.roll_number,
+                ce.enrollment_date,
+                c.code as course_code,
+                c.name as course_name
             FROM users u
             JOIN course_enrollments ce ON u.id = ce.student_id
-            WHERE ce.course_id = ? AND u.role = 'student'
-            ORDER BY u.name
-        ''', (course_id,))
+            JOIN courses c ON ce.course_id = c.id
+            WHERE u.role = 'student'
+            AND ce.course_id = ?
+            AND ce.status = 'active'
+        '''
+        params = [course_id]
+        
+        # Add roll number filter if provided
+        if roll_number:
+            query += ' AND u.roll_number LIKE ?'
+            params.append(f'%{roll_number}%')
+            
+        query += ' ORDER BY u.roll_number, u.name'
+        
+        cursor.execute(query, params)
         students = cursor.fetchall()
+        
+        # Include course information in response
+        result = {
+            'course': course,
+            'students': students
+        }
+        
         conn.close()
-        return jsonify(students)
+        return jsonify(result)
     except Exception as e:
         logging.error(f"Error fetching course students: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/complaints', methods=['GET'])
@@ -577,6 +752,242 @@ def respond_to_complaint(complaint_id):
             
     except Exception as e:
         logging.error(f"Error responding to complaint: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/admin/leave-requests', methods=['GET'])
+def get_leave_requests():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                lr.*,
+                u.name as faculty_name,
+                u.email as faculty_email
+            FROM leave_requests lr
+            JOIN users u ON lr.faculty_id = u.id
+            ORDER BY lr.created_at DESC
+        ''')
+        
+        requests = cursor.fetchall()
+        conn.close()
+        return jsonify(requests)
+    except Exception as e:
+        logging.error(f"Error fetching leave requests: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/admin/leave-requests/<int:request_id>', methods=['PUT'])
+def update_leave_request(request_id):
+    try:
+        data = request.get_json()
+        if not data or 'status' not in data:
+            return jsonify({'error': 'Status is required'}), 400
+            
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # First get the request to get faculty_id
+        cursor.execute('SELECT faculty_id FROM leave_requests WHERE id = ?', (request_id,))
+        leave_request = cursor.fetchone()
+        if not leave_request:
+            conn.close()
+            return jsonify({'error': 'Leave request not found'}), 404
+
+        # Update the request
+        cursor.execute('''
+            UPDATE leave_requests 
+            SET status = ?, admin_response = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (data['status'], data.get('admin_response'), request_id))
+        
+        conn.commit()
+
+        # Get updated request
+        cursor.execute('SELECT * FROM leave_requests WHERE id = ?', (request_id,))
+        updated_request = cursor.fetchone()
+        conn.close()
+
+        if updated_request:
+            # Emit Socket.IO event for faculty notification
+            socketio.emit('leave_request_update', {
+                'id': request_id,
+                'faculty_id': leave_request['faculty_id'],
+                'status': data['status'],
+                'admin_response': data.get('admin_response')
+            })
+        
+        return jsonify({'message': 'Leave request updated successfully'})
+    except Exception as e:
+        logging.error(f"Error updating leave request: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/faculty/leave-requests/<int:faculty_id>', methods=['GET'])
+def get_faculty_leave_requests(faculty_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM leave_requests 
+            WHERE faculty_id = ?
+            ORDER BY created_at DESC
+        ''', (faculty_id,))
+        
+        requests = cursor.fetchall()
+        conn.close()
+        return jsonify(requests)
+    except Exception as e:
+        logging.error(f"Error fetching faculty leave requests: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/faculty/leave-requests', methods=['POST'])
+def create_leave_request():
+    try:
+        data = request.get_json()
+        logger.debug(f"Received leave request data: {data}")
+        
+        if not data:
+            logger.error("No JSON data received")
+            return jsonify({'error': 'Invalid JSON data'}), 400
+
+        required_fields = ['faculty_id', 'faculty_name', 'start_date', 'end_date', 'leave_type', 'reason']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            logger.error(f"Missing fields in request: {missing_fields}")
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
+        # Validate faculty_id is an integer
+        try:
+            faculty_id = int(data['faculty_id'])
+            logger.debug(f"Converted faculty_id to int: {faculty_id}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid faculty_id format: {data['faculty_id']}, error: {str(e)}")
+            return jsonify({'error': 'Invalid faculty_id format'}), 400
+
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Verify faculty exists
+            cursor.execute('SELECT id FROM users WHERE id = ? AND role = "faculty"', (faculty_id,))
+            faculty = cursor.fetchone()
+            if not faculty:
+                logger.error(f"Faculty not found with id: {faculty_id}")
+                return jsonify({'error': 'Faculty not found'}), 404
+
+            logger.info(f"Found faculty with id: {faculty_id}")
+
+            # Create new request
+            insert_query = '''
+                INSERT INTO leave_requests (
+                    faculty_id, faculty_name, start_date, end_date, 
+                    leave_type, reason, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Pending', CURRENT_TIMESTAMP)
+            '''
+            insert_params = (
+                faculty_id, data['faculty_name'], data['start_date'],
+                data['end_date'], data['leave_type'], data['reason']
+            )
+            logger.debug(f"Executing insert query with params: {insert_params}")
+            
+            cursor.execute(insert_query, insert_params)
+            request_id = cursor.lastrowid
+            conn.commit()
+            logger.info(f"Created leave request with id: {request_id}")
+
+            # Fetch the created request
+            cursor.execute('SELECT * FROM leave_requests WHERE id = ?', (request_id,))
+            new_request = cursor.fetchone()
+            
+            if new_request:
+                logger.info(f"Successfully fetched new request: {new_request}")
+                # Convert datetime objects to string to ensure JSON serializable
+                new_request_dict = dict(new_request)
+                new_request_dict['created_at'] = str(new_request_dict.get('created_at'))
+                new_request_dict['updated_at'] = str(new_request_dict.get('updated_at'))
+                
+                # Emit Socket.IO event for admin notification
+                socketio.emit('new_leave_request', {
+                    'id': new_request_dict['id'],
+                    'faculty_name': data['faculty_name'],
+                    'start_date': data['start_date'],
+                    'end_date': data['end_date'],
+                    'leave_type': data['leave_type'],
+                    'status': 'Pending'
+                })
+                
+                return jsonify(new_request_dict), 201
+            else:
+                logger.error("Failed to fetch created request")
+                return jsonify({'error': 'Failed to create request'}), 500
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error: {str(e)}")
+            if 'conn' in locals():
+                conn.rollback()
+            return jsonify({'error': f'Database error: {str(e)}'}), 500
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
+    except Exception as e:
+        logger.error(f"Unexpected error creating leave request: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/faculty-assignments', methods=['GET'])
+def get_faculty_assignments():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all courses with their assigned faculty
+        cursor.execute('''
+            SELECT c.id, c.code, c.name, c.department, c.credits, 
+                   c.assigned_faculty_id, u.name as faculty_name
+            FROM courses c
+            LEFT JOIN users u ON c.assigned_faculty_id = u.id
+            WHERE u.role = 'faculty' OR u.role IS NULL
+        ''')
+        
+        courses = cursor.fetchall()
+        
+        # Get all faculty members
+        cursor.execute('SELECT id, name, email, department FROM users WHERE role = "faculty"')
+        faculty = cursor.fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            'courses': courses,
+            'faculty': faculty
+        })
+    except Exception as e:
+        logger.error(f"Error getting faculty assignments: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/faculty-assignments/<int:course_id>', methods=['PUT'])
+def assign_faculty(course_id):
+    try:
+        data = request.get_json()
+        faculty_id = data.get('facultyId')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update course assignment
+        cursor.execute('''
+            UPDATE courses 
+            SET assigned_faculty_id = ?
+            WHERE id = ?
+        ''', (faculty_id, course_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Faculty assigned successfully'})
+    except Exception as e:
+        logger.error(f"Error assigning faculty: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':

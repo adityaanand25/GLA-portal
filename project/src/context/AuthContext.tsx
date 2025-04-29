@@ -1,6 +1,9 @@
 import { createContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
 
+// API base URL
+const API_URL = 'http://127.0.0.1:3000';
+
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
@@ -27,12 +30,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const login = async (email: string, password: string, role: string) => {
     try {
-      const response = await fetch('http://localhost:3000/api/login', {
+      console.log('Attempting login with:', { email, role }); // Debug log
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ email, password, role }),
       });
+
+      console.log('Login response status:', response.status); // Debug log
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -40,6 +48,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
 
       const userData = await response.json();
+      console.log('Login successful:', userData); // Debug log
       setUser(userData);
       localStorage.setItem('gla_user', JSON.stringify(userData));
       return userData;
@@ -51,10 +60,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const register = async (name: string, email: string, password: string, role: string) => {
     try {
-      const response = await fetch('http://localhost:3000/api/register', {
+      const response = await fetch(`${API_URL}/api/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ name, email, password, role }),
       });
 

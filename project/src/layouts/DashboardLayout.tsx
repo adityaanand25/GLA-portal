@@ -51,6 +51,7 @@ const DashboardLayout = () => {
           { name: 'ID Card Approval', path: '/admin/id-cards', icon: <CheckCircle className="w-5 h-5" /> },
           { name: 'Faculty Assignment', path: '/admin/faculty-assignment', icon: <Users2 className="w-5 h-5" /> },
           { name: 'Complaints', path: '/admin/complaints', icon: <MessageSquare className="w-5 h-5" /> },
+          { name: 'Leave Requests', path: '/admin/leave-requests', icon: <Calendar className="w-5 h-5" /> },
         ];
       default:
         return [];

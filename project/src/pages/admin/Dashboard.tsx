@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
-  CheckCircle, Users2, MessageSquare, BarChart3, 
-  TrendingUp, TrendingDown, FileText, CreditCard, ExternalLink
+  CheckCircle, Users2, MessageSquare, 
+  TrendingUp, TrendingDown, FileText, CreditCard, Calendar, Users
 } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -71,11 +71,55 @@ const AdminDashboard = () => {
     },
   ];
 
+  const menuItems = [
+    {
+      title: 'Complaint Resolution',
+      description: 'View and respond to student complaints',
+      icon: <FileText className="h-6 w-6" />,
+      href: '/admin/complaints',
+    },
+    {
+      title: 'ID Card Requests',
+      description: 'Process student ID card requests',
+      icon: <CreditCard className="h-6 w-6" />,
+      href: '/admin/id-cards',
+    },
+    {
+      title: 'Faculty Management',
+      description: 'Manage faculty assignments and roles',
+      icon: <Users className="h-6 w-6" />,
+      href: '/admin/faculty-assignment',
+    },
+    {
+      title: 'Leave Requests',
+      description: 'Review and manage faculty leave requests',
+      icon: <Calendar className="h-6 w-6" />,
+      href: '/admin/leave-requests',
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
         <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
+      </div>
+
+      {/* Navigation Menu */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {menuItems.map((item) => (
+          <Link key={item.href} to={item.href}>
+            <Card className="h-full hover:bg-gray-50 transition-colors">
+              <div className="p-6">
+                <div className="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center mb-4">
+                  {item.icon}
+                </div>
+                <h3 className="text-lg font-medium text-gray-900">{item.title}</h3>
+                <p className="mt-2 text-sm text-gray-500">{item.description}</p>
+              </div>
+            </Card>
+          </Link>
+        ))}
       </div>
 
       {/* Stats Cards */}

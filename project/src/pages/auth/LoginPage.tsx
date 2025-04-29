@@ -156,16 +156,13 @@ const LoginPage = () => {
             <div className="w-full border-t border-gray-300" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-gray-50 text-gray-500">Demo credentials</span>
+            <span className="px-2 bg-gray-50 text-gray-500">Don't have an account?</span>
           </div>
         </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-3">
-          <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-md">
-            <p><strong>Student:</strong> student@example.com / password123</p>
-            <p><strong>Faculty:</strong> faculty@example.com / password123</p>
-            <p><strong>Admin:</strong> admin@example.com / password123</p>
-          </div>
+        <div className="mt-4 text-center">
+          <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
+            Create a new account
+          </Link>
         </div>
       </div>
     </div>

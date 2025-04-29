@@ -36,12 +36,18 @@ const RegisterPage = () => {
   });
 
   const password = watch('password');
+  const selectedRole = watch('role');
 
   const onSubmit = async (data: RegisterFormValues) => {
     setIsLoading(true);
     setRegisterError('');
 
     try {
+      // Validate admin email domain
+      if (data.role === 'admin' && !data.email.endsWith('@gla.ac.in')) {
+        throw new Error('Admin email must be from @gla.ac.in domain');
+      }
+
       await registerUser(data.name, data.email, data.password, data.role);
 
       // Navigate based on role after successful registration
@@ -123,6 +129,12 @@ const RegisterPage = () => {
               value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
               message: 'Invalid email address',
             },
+            validate: (value) => {
+              if (selectedRole === 'admin' && !value.endsWith('@gla.ac.in')) {
+                return 'Admin email must be from @gla.ac.in domain';
+              }
+              return true;
+            }
           })}
           error={errors.email?.message}
         />

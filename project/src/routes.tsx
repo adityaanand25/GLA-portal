@@ -27,6 +27,7 @@ const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const IdCardApproval = lazy(() => import('./pages/admin/IdCardApproval'));
 const ComplaintResolution = lazy(() => import('./pages/admin/ComplaintResolution'));
 const FacultyAssignment = lazy(() => import('./pages/admin/FacultyAssignment'));
+const LeaveRequests = lazy(() => import('./pages/admin/LeaveRequests'));
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -72,7 +73,8 @@ function AppRoutes() {
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/admin/id-cards" element={<IdCardApproval />} />
                 <Route path="/admin/complaints" element={<ComplaintResolution />} />
-                <Route path="/admin/faculty" element={<FacultyAssignment />} />
+                <Route path="/admin/faculty-assignment" element={<FacultyAssignment />} />
+                <Route path="/admin/leave-requests" element={<LeaveRequests />} />
               </>
             )}
           </Route>
