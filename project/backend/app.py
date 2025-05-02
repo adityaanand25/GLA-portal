@@ -176,6 +176,10 @@ def register():
         if not (name and email and password and role):
             return jsonify({'error': 'All fields are required'}), 400
 
+        # Prevent admin registration entirely
+        if role == 'admin':
+            return jsonify({'error': 'Admin registration is not allowed'}), 403
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -185,19 +189,6 @@ def register():
             if cursor.fetchone():
                 conn.close()
                 return jsonify({'error': 'Email already registered'}), 409
-
-            # For admin registration, check email domain and existing admins
-            if role == 'admin':
-                if not email.endswith('@gla.ac.in'):
-                    return jsonify({'error': 'Admin email must be from @gla.ac.in domain'}), 403
-                
-                # Check if admin exists
-                cursor.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
-                admin_count = cursor.fetchone()['count']
-                
-                # Optional: Uncomment below to restrict to only one admin
-                # if admin_count > 0:
-                #     return jsonify({'error': 'An admin account already exists'}), 403
 
             # Insert the new user
             cursor.execute(
